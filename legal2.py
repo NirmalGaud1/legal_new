@@ -3,11 +3,11 @@
 
 # In[ ]:
 
-
 import streamlit as st
 from PyPDF2 import PdfReader
 import re
 import google.generativeai as genai
+import time
 
 # Configure Gemini
 GEMINI_API_KEY = "AIzaSyA-9-lTQTWdNM43YdOXMQwGKDy0SrMwo6c"  # Replace with your actual key
@@ -41,12 +41,18 @@ class LegalDocProcessor:
                 results[section] = match.group(0).strip()
         return results
 
-    def analyze_with_gemini(self, text, prompt):
-        try:
-            response = model.generate_content(prompt + text)
-            return response.text
-        except Exception as e:
-            return f"API Error: {str(e)}"
+    def analyze_with_gemini(self, text, prompt, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                response = model.generate_content(prompt + text)
+                return response.text
+            except Exception as e:
+                if "quota" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = 2 ** (attempt + 1)  # Exponential backoff
+                    time.sleep(wait_time)
+                    continue
+                return f"API Error: {str(e)}"
+        return "API Error: Maximum retries exceeded"
 
 class LegalAIAgent:
     def __init__(self):
@@ -118,21 +124,40 @@ if uploaded_file:
             st.divider()
             
             with st.expander("📋 Document Metadata", expanded=True):
-                st.write(analysis['metadata'])
+                if "API Error" in analysis['metadata']:
+                    st.error(analysis['metadata'])
+                else:
+                    st.write(analysis['metadata'])
             
             with st.expander("📑 Key Clauses"):
                 for section, content in analysis['key_clauses'].items():
                     st.subheader(f"{section.replace('_', ' ').title()}")
+                    
                     st.write("**Summary:**")
-                    st.write(content['summary'])
+                    if "API Error" in content['summary']:
+                        st.error(content['summary'])
+                    else:
+                        st.write(content['summary'])
+                    
                     st.write("**Obligations:**")
-                    st.write(content['obligations'])
+                    if "API Error" in content['obligations']:
+                        st.error(content['obligations'])
+                    else:
+                        st.write(content['obligations'])
+                    
                     st.write("**Key Dates:**")
-                    st.write(content['dates'])
+                    if "API Error" in content['dates']:
+                        st.error(content['dates'])
+                    else:
+                        st.write(content['dates'])
+                    
                     st.divider()
             
             with st.expander("⚠️ Identified Risks"):
-                st.write(analysis['risks'])
+                if "API Error" in analysis['risks']:
+                    st.error(analysis['risks'])
+                else:
+                    st.write(analysis['risks'])
         
         except Exception as e:
             st.error(f"Error processing document: {str(e)}")
